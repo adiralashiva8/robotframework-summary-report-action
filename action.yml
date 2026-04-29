@@ -34,12 +34,12 @@ inputs:
     default: ''
 
   # ── Tag filtering ───────────────────────────────────────────────────────
-  owners:
-    description: 'Comma-separated list of owner tag names to show in Owner Stats (e.g., "alice,bob,charlie"). Empty = show all tags.'
+  owner_name_tags:
+    description: 'Comma-separated list of tags that represent owners (e.g., "alice,bob,charlie"). Shown in Owner Stats section.'
     required: false
     default: ''
-  module_tag_prefix:
-    description: 'Prefix to filter module tags (e.g., "module:"). Empty = use suite names.'
+  exclude_tags:
+    description: 'Comma-separated list of tags to exclude from module stats (e.g., "smoke,regression"). Tags not in owner_name_tags or exclude_tags are treated as modules.'
     required: false
     default: ''
 
@@ -94,6 +94,9 @@ outputs:
   failed_tests:
     description: 'Number of failed tests'
     value: ${{ steps.generate.outputs.failed_tests }}
+  skipped_tests:
+    description: 'Number of skipped tests'
+    value: ${{ steps.generate.outputs.skipped_tests }}
   pass_percentage:
     description: 'Pass percentage'
     value: ${{ steps.generate.outputs.pass_percentage }}
@@ -121,8 +124,8 @@ runs:
         INPUT_TOP_N: ${{ inputs.top_n }}
         INPUT_COMMENT_ON: ${{ inputs.comment_on }}
         INPUT_SHA: ${{ inputs.sha }}
-        INPUT_OWNERS: ${{ inputs.owners }}
-        INPUT_MODULE_TAG_PREFIX: ${{ inputs.module_tag_prefix }}
+        INPUT_OWNERS: ${{ inputs.owner_name_tags }}
+        INPUT_EXCLUDE_TAGS: ${{ inputs.exclude_tags }}
         INPUT_SHOW_PROJECT_STATUS: ${{ inputs.show_project_status }}
         INPUT_SHOW_OWNER_STATS: ${{ inputs.show_owner_stats }}
         INPUT_SHOW_FAILED_MODULES: ${{ inputs.show_failed_modules }}

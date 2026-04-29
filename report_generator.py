@@ -46,10 +46,11 @@ def parse_output_xml(paths):
     # ── Overall stats
     total = len(all_tests)
     passed = sum(1 for t in all_tests if t.status == "PASS")
-    failed = total - passed
+    skipped = sum(1 for t in all_tests if t.status == "SKIP")
+    failed = total - passed - skipped
     pass_pct = round((passed / total) * 100, 2) if total > 0 else 0.0
 
-    overall = {"total": total, "pass": passed, "fail": failed, "pass_pct": pass_pct}
+    overall = {"total": total, "pass": passed, "fail": failed, "skip": skipped, "pass_pct": pass_pct}
 
     # ── Per-tag stats
     tag_data = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
@@ -169,7 +170,7 @@ def generate_markdown_report(data, config):
     project = config["project_name"]
     top_n = config["top_n"]
     owner_list = config["owner_list"]
-    module_prefix = config["module_prefix"]
+    exclude_list = config["exclude_list"]
     collapsible = config["collapsible"]
 
     lines = [COMMENT_MARKER, ""]
@@ -181,7 +182,7 @@ def generate_markdown_report(data, config):
     else:
         status_emoji = "❌"
 
-    lines.append(f"## {status_emoji} {_md_esc(project)} Test Report")
+    lines.append(f"## {status_emoji} {_md_esc(project)}")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -190,12 +191,13 @@ def generate_markdown_report(data, config):
     if config["show_project_status"]:
         lines.append("### 📊 Project Status")
         lines.append("")
-        lines.append("| Total | ✅ Passed | ❌ Failed | Pass % |")
-        lines.append("|:---:|:---:|:---:|:---:|")
+        lines.append("| Total | ✅ Passed | ❌ Failed | ⏭️ Skipped | Pass % |")
+        lines.append("|:---:|:---:|:---:|:---:|:---:|")
         lines.append(
             f"| **{overall['total']}** "
             f"| **{overall['pass']}** "
             f"| **{overall['fail']}** "
+            f"| **{overall['skip']}** "
             f"| **{pct}%** |"
         )
         lines.append("")
@@ -219,11 +221,8 @@ def generate_markdown_report(data, config):
 
     # ── 3. Top N Failed Modules ───────────────────────────────────────────
     if config["show_failed_modules"]:
-        if module_prefix:
-            module_tags = _filter_tags_by_prefix(data["tag_data"], module_prefix)
-            module_items = [(n, s) for n, s in module_tags.items() if s["fail"] > 0]
-        else:
-            module_items = [(n, s) for n, s in data["suite_data"].items() if s["fail"] > 0]
+        module_tags = _filter_module_tags(data["tag_data"], owner_list, exclude_list)
+        module_items = [(n, s) for n, s in module_tags.items() if s["fail"] > 0]
 
         if module_items:
             module_items.sort(key=lambda x: x[1]["fail"], reverse=True)
@@ -326,17 +325,16 @@ def _filter_owner_tags(tag_data, owner_list):
     }
 
 
-def _filter_tags_by_prefix(tag_data, prefix):
-    """Filter and rename tag entries by prefix. If prefix is empty, return all."""
-    if not prefix:
-        return dict(tag_data)
-    filtered = {}
-    for tag_name, stats in tag_data.items():
-        if tag_name.lower().startswith(prefix.lower()):
-            display_name = tag_name[len(prefix):]
-            if display_name:
-                filtered[display_name] = stats
-    return filtered
+def _filter_module_tags(tag_data, owner_list, exclude_list):
+    """Return tags that are not owner tags and not excluded tags (i.e. module tags)."""
+    owner_set = {name.strip().lower() for name in owner_list}
+    exclude_set = {name.strip().lower() for name in exclude_list}
+    skip = owner_set | exclude_set
+    return {
+        tag_name: stats
+        for tag_name, stats in tag_data.items()
+        if tag_name.lower() not in skip
+    }
 
 
 # ─── GitHub API Helpers ───────────────────────────────────────────────────────
@@ -455,7 +453,8 @@ def main():
     project_name = os.environ.get("INPUT_PROJECT_NAME", "Robot Framework")
     owners_raw = os.environ.get("INPUT_OWNERS", "")
     owner_list = [o.strip() for o in owners_raw.split(",") if o.strip()]
-    module_prefix = os.environ.get("INPUT_MODULE_TAG_PREFIX", "")
+    exclude_raw = os.environ.get("INPUT_EXCLUDE_TAGS", "")
+    exclude_list = [t.strip() for t in exclude_raw.split(",") if t.strip()]
     top_n = int(os.environ.get("INPUT_TOP_N", "5"))
     input_sha = os.environ.get("INPUT_SHA", "")
     comment_on = os.environ.get("INPUT_COMMENT_ON", "pr").lower().strip()
@@ -466,7 +465,7 @@ def main():
         "project_name": project_name,
         "top_n": top_n,
         "owner_list": owner_list,
-        "module_prefix": module_prefix,
+        "exclude_list": exclude_list,
         "show_project_status": _is_true(os.environ.get("INPUT_SHOW_PROJECT_STATUS", "true")),
         "show_owner_stats": _is_true(os.environ.get("INPUT_SHOW_OWNER_STATS", "true")),
         "show_failed_modules": _is_true(os.environ.get("INPUT_SHOW_FAILED_MODULES", "true")),
@@ -494,6 +493,7 @@ def main():
     set_output("total_tests", overall["total"])
     set_output("passed_tests", overall["pass"])
     set_output("failed_tests", overall["fail"])
+    set_output("skipped_tests", overall["skip"])
     set_output("pass_percentage", overall["pass_pct"])
     set_output("report_markdown", report)
 
@@ -501,7 +501,7 @@ def main():
     print(f"\n{'='*60}")
     print(f"  {project_name} Summary")
     print(f"  Total: {overall['total']}  Pass: {overall['pass']}  "
-          f"Fail: {overall['fail']}  Pass%: {overall['pass_pct']}")
+          f"Fail: {overall['fail']}  Skip: {overall['skip']}  Pass%: {overall['pass_pct']}")
     print(f"{'='*60}\n")
 
     # Post comment

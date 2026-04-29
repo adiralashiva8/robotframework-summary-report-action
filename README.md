@@ -85,8 +85,8 @@ jobs:
 
 | Input | Default | Description |
 |---|---|---|
-| `owners` | `""` | Comma-separated list of owner tags (e.g., `"alice,bob,charlie"`). Empty = show all tags |
-| `module_tag_prefix` | `""` | Filter module tags by prefix. Empty = use suite names |
+| `owner_name_tags` | `""` | Comma-separated list of tags that represent owners (e.g., `"alice,bob,charlie"`). Shown in Owner Stats |
+| `exclude_tags` | `""` | Comma-separated list of tags to exclude from module stats (e.g., `"smoke,regression"`). Tags not in `owner_name_tags` or `exclude_tags` are treated as modules |
 
 ### Section Toggles
 
@@ -112,6 +112,7 @@ Show or hide any section of the report:
 | `total_tests` | Total number of tests |
 | `passed_tests` | Number of passed tests |
 | `failed_tests` | Number of failed tests |
+| `skipped_tests` | Number of skipped tests |
 | `pass_percentage` | Pass percentage |
 
 ---
@@ -172,12 +173,12 @@ Only show stats for specific team members:
   with:
     output_xml_path: 'results/output.xml'
     github_token: ${{ secrets.GITHUB_TOKEN }}
-    owners: 'alice,bob,charlie'
+    owner_name_tags: 'alice,bob,charlie'
 ```
 
-### With Module Tag Prefix
+### With Exclude Tags
 
-If your tests use tags like `module:accounts`:
+Exclude certain tags (e.g., test types) from module stats:
 
 ```yaml
 - name: Summary Report
@@ -186,7 +187,8 @@ If your tests use tags like `module:accounts`:
   with:
     output_xml_path: 'results/output.xml'
     github_token: ${{ secrets.GITHUB_TOKEN }}
-    module_tag_prefix: 'module:'
+    owner_name_tags: 'alice,bob,charlie'
+    exclude_tags: 'smoke,regression,sanity'
 ```
 
 ### Use Outputs in Next Steps
@@ -216,23 +218,30 @@ Tag tests with owner names to get per-person stats:
 ```robotframework
 *** Test Cases ***
 Verify Login
-    [Tags]    alice    smoke
+    [Tags]    alice    smoke    accounts
     Log    Test
 ```
 
-Then specify which tags are owners: `owners: 'alice,bob,charlie'`.
-Leave `owners` empty to show stats for **all** tags.
+Then specify which tags are owners: `owner_name_tags: 'alice,bob,charlie'`.
 
 ### Module Tags
 
-By default, **suite names** are used as modules. To use tags instead:
+Any tag that is **not** in `owner_name_tags` and **not** in `exclude_tags` is treated as a module:
 
 ```robotframework
 Verify Account
-    [Tags]    module:accounts    bob
+    [Tags]    accounts    bob    smoke
 ```
 
-Then set `module_tag_prefix: 'module:'`.
+With `owner_name_tags: 'bob'` and `exclude_tags: 'smoke'`, the tag `accounts` becomes a module.
+
+### Exclude Tags
+
+Use `exclude_tags` to filter out tags you don't want in module stats (e.g., test types):
+
+```yaml
+exclude_tags: 'smoke,regression,sanity'
+```
 
 ---
 

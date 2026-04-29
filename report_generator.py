@@ -62,16 +62,6 @@ def parse_output_xml(paths):
             else:
                 tag_data[tag]["fail"] += 1
 
-    # ── Per-suite (module) stats
-    suite_data = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
-    for test in all_tests:
-        suite_name = test.parent.name
-        suite_data[suite_name]["total"] += 1
-        if test.status == "PASS":
-            suite_data[suite_name]["pass"] += 1
-        else:
-            suite_data[suite_name]["fail"] += 1
-
     # ── Failed test details
     failed_tests_info = []
     for test in all_tests:
@@ -80,7 +70,6 @@ def parse_output_xml(paths):
                 "name": test.name,
                 "message": (test.message or "").strip() or "Unknown error",
                 "tags": list(test.tags),
-                "module": test.parent.name,
             })
 
     # ── Passed test details
@@ -90,16 +79,12 @@ def parse_output_xml(paths):
             passed_tests_info.append({
                 "name": test.name,
                 "tags": list(test.tags),
-                "module": test.parent.name,
             })
 
-    # ── Error messages by module and globally
-    error_module_list = []
+    # ── Error messages globally
     error_global = Counter()
     for ft in failed_tests_info:
-        msg = ft["message"]
-        error_module_list.append({"message": msg, "module": ft["module"]})
-        error_global[msg] += 1
+        error_global[ft["message"]] += 1
 
     # ── Failed keywords
     failed_kw_counter = Counter()
@@ -111,32 +96,30 @@ def parse_output_xml(paths):
     return {
         "overall": overall,
         "tag_data": dict(tag_data),
-        "suite_data": dict(suite_data),
         "failed_tests": failed_tests_info,
         "passed_tests": passed_tests_info,
-        "error_module_list": error_module_list,
         "error_global": error_global,
         "failed_keywords": failed_kw_counter,
     }
 
 
 def _collect_leaf_failed_keywords(item):
-    """Recursively collect the deepest (leaf-level) failing keywords."""
+    """Recursively collect the deepest (leaf-level) failing keyword names."""
     keywords = []
     body = getattr(item, "body", None) or getattr(item, "keywords", [])
     for child in body:
-        status = getattr(child, "status", None)
-        if status == "FAIL":
-            child_failures = _collect_leaf_failed_keywords(child)
-            if child_failures:
-                keywords.extend(child_failures)
-            else:
-                name = getattr(child, "name", "") or ""
-                args = getattr(child, "args", [])
-                display = name
-                if args:
-                    display += " " + " ".join(str(a) for a in args)
-                keywords.append(display.strip())
+        child_type = getattr(child, "type", "")
+        if child_type not in ("KEYWORD", "SETUP", "TEARDOWN"):
+            continue
+        if getattr(child, "status", None) != "FAIL":
+            continue
+        child_failures = _collect_leaf_failed_keywords(child)
+        if child_failures:
+            keywords.extend(child_failures)
+        else:
+            name = getattr(child, "name", "") or ""
+            if name:
+                keywords.append(name.strip())
     return keywords
 
 
@@ -210,7 +193,7 @@ def generate_markdown_report(data, config):
             lines.append("")
             lines.append("| Tag | Total | Passed | Failed | Pass % |")
             lines.append("|:---|:---:|:---:|:---:|:---:|")
-            for tag_name, stats in sorted(owner_tags.items(), key=lambda x: x[0].lower()):
+            for tag_name, stats in sorted(owner_tags.items(), key=lambda x: x[1]["fail"], reverse=True):
                 p = stats["pass"]
                 f = stats["fail"]
                 t = stats["total"]
@@ -241,20 +224,23 @@ def generate_markdown_report(data, config):
             lines.append(_section_end(collapsible))
 
     # ── 4. Top N Common Failures In Module ────────────────────────────────
-    if config["show_failures_by_module"] and data["error_module_list"]:
+    if config["show_failures_by_module"] and data["failed_tests"]:
         pair_counter = Counter()
-        for entry in data["error_module_list"]:
-            pair_counter[(entry["message"], entry["module"])] += 1
-        top_pairs = pair_counter.most_common(top_n)
-
-        lines.append(_section_start(f"Top {top_n} Failures By Module", "🔍", collapsible))
-        lines.append("")
-        lines.append("| Error Message | Module | Count |")
-        lines.append("|:---|:---:|:---:|")
-        for (msg, mod), count in top_pairs:
-            lines.append(f"| {_md_esc(msg)} | {_md_esc(mod)} | {count} |")
-        lines.append("")
-        lines.append(_section_end(collapsible))
+        for ft in data["failed_tests"]:
+            msg = ft["message"]
+            module_tags = _get_module_tags_for_test(ft["tags"], owner_list, exclude_list)
+            for mod in module_tags:
+                pair_counter[(msg, mod)] += 1
+        if pair_counter:
+            top_pairs = pair_counter.most_common(top_n)
+            lines.append(_section_start(f"Top {top_n} Failures By Module", "🔍", collapsible))
+            lines.append("")
+            lines.append("| Error Message | Module | Count |")
+            lines.append("|:---|:---:|:---:|")
+            for (msg, mod), count in top_pairs:
+                lines.append(f"| {_md_esc(msg)} | {_md_esc(mod)} | {count} |")
+            lines.append("")
+            lines.append(_section_end(collapsible))
 
     # ── 5. Top N Common Failures ──────────────────────────────────────────
     if config["show_common_failures"] and data["error_global"]:
@@ -287,8 +273,9 @@ def generate_markdown_report(data, config):
         lines.append("| # | Test Name | Module | Error |")
         lines.append("|:---:|:---|:---|:---|")
         for i, ft in enumerate(data["failed_tests"], 1):
+            mod = ", ".join(_get_module_tags_for_test(ft["tags"], owner_list, exclude_list)) or "—"
             lines.append(
-                f"| {i} | {_md_esc(ft['name'])} | {_md_esc(ft['module'])} | {_md_esc(ft['message'])} |"
+                f"| {i} | {_md_esc(ft['name'])} | {_md_esc(mod)} | {_md_esc(ft['message'])} |"
             )
         lines.append("")
         lines.append(_section_end(collapsible))
@@ -300,7 +287,8 @@ def generate_markdown_report(data, config):
         lines.append("| # | Test Name | Module |")
         lines.append("|:---:|:---|:---|")
         for i, pt in enumerate(data["passed_tests"], 1):
-            lines.append(f"| {i} | {_md_esc(pt['name'])} | {_md_esc(pt['module'])} |")
+            mod = ", ".join(_get_module_tags_for_test(pt["tags"], owner_list, exclude_list)) or "—"
+            lines.append(f"| {i} | {_md_esc(pt['name'])} | {_md_esc(mod)} |")
         lines.append("")
         lines.append(_section_end(collapsible))
 
@@ -335,6 +323,14 @@ def _filter_module_tags(tag_data, owner_list, exclude_list):
         for tag_name, stats in tag_data.items()
         if tag_name.lower() not in skip
     }
+
+
+def _get_module_tags_for_test(test_tags, owner_list, exclude_list):
+    """Return module tags for a single test (tags minus owners and excludes)."""
+    owner_set = {name.strip().lower() for name in owner_list}
+    exclude_set = {name.strip().lower() for name in exclude_list}
+    skip = owner_set | exclude_set
+    return [tag for tag in test_tags if tag.lower() not in skip]
 
 
 # ─── GitHub API Helpers ───────────────────────────────────────────────────────

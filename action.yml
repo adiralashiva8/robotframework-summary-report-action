@@ -1,0 +1,134 @@
+name: 'Robot Framework Summary Report'
+description: 'Parse Robot Framework output.xml and post a beautiful summary report on your PR or Commit — zero config needed.'
+author: 'robotframework-summary-report-action'
+
+branding:
+  icon: 'bar-chart-2'
+  color: 'green'
+
+inputs:
+  # ── Required ────────────────────────────────────────────────────────────
+  output_xml_path:
+    description: 'Path to Robot Framework output.xml. Supports glob (e.g., "results/**/*.xml")'
+    required: true
+  github_token:
+    description: 'GitHub token for posting comments. Use ${{ secrets.GITHUB_TOKEN }}'
+    required: true
+
+  # ── Display options ─────────────────────────────────────────────────────
+  project_name:
+    description: 'Project name shown in report header'
+    required: false
+    default: 'Robot Framework Summary Report'
+  top_n:
+    description: 'Number of items shown per section (top failures, modules, keywords)'
+    required: false
+    default: '5'
+  comment_on:
+    description: 'Where to post: "pr", "commit", or "both"'
+    required: false
+    default: 'pr'
+  sha:
+    description: 'Commit SHA to comment on (auto-detected if empty)'
+    required: false
+    default: ''
+
+  # ── Tag filtering ───────────────────────────────────────────────────────
+  owners:
+    description: 'Comma-separated list of owner tag names to show in Owner Stats (e.g., "alice,bob,charlie"). Empty = show all tags.'
+    required: false
+    default: ''
+  module_tag_prefix:
+    description: 'Prefix to filter module tags (e.g., "module:"). Empty = use suite names.'
+    required: false
+    default: ''
+
+  # ── Section toggles (show/hide each section) ───────────────────────────
+  show_project_status:
+    description: 'Show the overall project status table'
+    required: false
+    default: 'true'
+  show_owner_stats:
+    description: 'Show tag stats by owner section'
+    required: false
+    default: 'true'
+  show_failed_modules:
+    description: 'Show top failed modules section'
+    required: false
+    default: 'true'
+  show_failures_by_module:
+    description: 'Show common failures grouped by module'
+    required: false
+    default: 'true'
+  show_common_failures:
+    description: 'Show top common failure messages'
+    required: false
+    default: 'true'
+  show_failed_keywords:
+    description: 'Show top failed keywords section'
+    required: false
+    default: 'true'
+  show_passed_tests:
+    description: 'Show list of all passed tests'
+    required: false
+    default: 'false'
+  show_failed_tests:
+    description: 'Show list of all failed tests with details'
+    required: false
+    default: 'true'
+  collapsible_sections:
+    description: 'Wrap detail sections in collapsible <details> blocks'
+    required: false
+    default: 'true'
+
+outputs:
+  report_markdown:
+    description: 'The generated Markdown report content'
+    value: ${{ steps.generate.outputs.report_markdown }}
+  total_tests:
+    description: 'Total number of tests'
+    value: ${{ steps.generate.outputs.total_tests }}
+  passed_tests:
+    description: 'Number of passed tests'
+    value: ${{ steps.generate.outputs.passed_tests }}
+  failed_tests:
+    description: 'Number of failed tests'
+    value: ${{ steps.generate.outputs.failed_tests }}
+  pass_percentage:
+    description: 'Pass percentage'
+    value: ${{ steps.generate.outputs.pass_percentage }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Generate and post report
+      id: generate
+      shell: bash
+      run: python "${{ github.action_path }}/report_generator.py"
+      env:
+        INPUT_OUTPUT_XML_PATH: ${{ inputs.output_xml_path }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}
+        INPUT_PROJECT_NAME: ${{ inputs.project_name }}
+        INPUT_TOP_N: ${{ inputs.top_n }}
+        INPUT_COMMENT_ON: ${{ inputs.comment_on }}
+        INPUT_SHA: ${{ inputs.sha }}
+        INPUT_OWNERS: ${{ inputs.owners }}
+        INPUT_MODULE_TAG_PREFIX: ${{ inputs.module_tag_prefix }}
+        INPUT_SHOW_PROJECT_STATUS: ${{ inputs.show_project_status }}
+        INPUT_SHOW_OWNER_STATS: ${{ inputs.show_owner_stats }}
+        INPUT_SHOW_FAILED_MODULES: ${{ inputs.show_failed_modules }}
+        INPUT_SHOW_FAILURES_BY_MODULE: ${{ inputs.show_failures_by_module }}
+        INPUT_SHOW_COMMON_FAILURES: ${{ inputs.show_common_failures }}
+        INPUT_SHOW_FAILED_KEYWORDS: ${{ inputs.show_failed_keywords }}
+        INPUT_SHOW_PASSED_TESTS: ${{ inputs.show_passed_tests }}
+        INPUT_SHOW_FAILED_TESTS: ${{ inputs.show_failed_tests }}
+        INPUT_COLLAPSIBLE_SECTIONS: ${{ inputs.collapsible_sections }}

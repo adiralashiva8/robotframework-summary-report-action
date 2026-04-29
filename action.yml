@@ -12,7 +12,7 @@ inputs:
     description: 'Path to Robot Framework output.xml. Supports glob (e.g., "results/**/*.xml")'
     required: true
   github_token:
-    description: 'GitHub token for posting comments. Use ${{ secrets.GITHUB_TOKEN }}'
+    description: 'GitHub token for posting comments (pass secrets.GITHUB_TOKEN from your workflow)'
     required: true
 
   # ── Display options ─────────────────────────────────────────────────────
